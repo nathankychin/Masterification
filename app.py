@@ -365,6 +365,13 @@ def login_required(route):
 
 
 @app.route("/")
+def home():
+    if current_user():
+        return redirect(url_for("index"))
+    return render_template("auth.html", mode="login")
+
+
+@app.route("/dashboard")
 @login_required
 def index():
     user = current_user()
