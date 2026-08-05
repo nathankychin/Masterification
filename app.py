@@ -84,15 +84,21 @@ def get_practice_mode_data(skill_name: str, category: str = None):
     }
 
 
-def create_user(conn, username, password, role="user"):
+def create_user(conn, username, password, role="user", exam_board=""):
     existing = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
     if existing:
         return None
     conn.execute(
-        "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, ?)",
-        (username, generate_password_hash(password), role, datetime.utcnow().isoformat()),
+        "INSERT INTO users (username, password_hash, role, created_at, exam_board) VALUES (?, ?, ?, ?, ?)",
+        (username, generate_password_hash(password), role, datetime.utcnow().isoformat(), exam_board),
     )
     return conn.execute("SELECT * FROM users WHERE username = ?", (username,)).fetchone()
+
+
+def ensure_user_exam_board_column(conn):
+    existing = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
+    if "exam_board" not in existing:
+        conn.execute("ALTER TABLE users ADD COLUMN exam_board TEXT DEFAULT ''")
 
 
 def init_db(force=False):
@@ -109,10 +115,12 @@ def init_db(force=False):
             username TEXT UNIQUE NOT NULL,
             password_hash TEXT NOT NULL,
             role TEXT NOT NULL DEFAULT 'user',
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            exam_board TEXT DEFAULT ''
         )
         """
     )
+    ensure_user_exam_board_column(conn)
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS skills (
@@ -265,40 +273,46 @@ def get_skill_category_fallback(skill_name: str) -> str:
     return "Other"
 
 
-def generate_scenario_ai(skill_name: str, skill_context: str, category: str) -> str:
-    """Generate a unique, AI-powered scenario."""
+def generate_question_ai(skill_name: str, skill_context: str, category: str, exam_board: str) -> str:
+    """Generate exam-style questions for a specific topic."""
+    prompt_text = (
+        f"Create 3 exam-style {exam_board} questions for the topic '{skill_name}'. "
+        f"Use the subject context: {skill_context}. "
+        f"The questions should be appropriate for the grade level and should focus on the exact topic, not the whole subject. "
+        f"Keep the topic specific and use the exam board terminology. "
+        f"Return only the question text, each on its own line."
+    )
     if not client:
-        return generate_scenario_fallback(skill_name, skill_context)
+        return generate_question_fallback(skill_name, skill_context, exam_board)
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {
                     "role": "system",
-                    "content": f"Create a realistic, high-pressure practice scenario for '{skill_name}' ({category}). Be specific to this exact skill. Respond with ONE scenario prompt (2-3 sentences).",
+                    "content": "You are an exam question writer. Create precise, topic-based questions at the correct level.",
                 },
                 {
                     "role": "user",
-                    "content": f"Skill: {skill_name}. Why it matters: {skill_context}",
+                    "content": prompt_text,
                 },
             ],
-            temperature=0.8,
-            max_tokens=150,
+            temperature=0.7,
+            max_tokens=220,
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        print(f"AI scenario failed: {e}")
-        return generate_scenario_fallback(skill_name, skill_context)
+        print(f"AI question generation failed: {e}")
+        return generate_question_fallback(skill_name, skill_context, exam_board)
 
 
-def generate_scenario_fallback(skill_name: str, skill_context: str) -> str:
-    """Fallback scenario."""
-    scenarios = [
-        f"You need to apply {skill_name} in a high-pressure situation right now. Walk through what you would do step-by-step.",
-        f"A critical moment just emerged where {skill_name} is essential. Show me your first response.",
-        f"You're being tested on {skill_name} under time pressure. How would you proceed?",
-    ]
-    return random.choice(scenarios)
+def generate_question_fallback(skill_name: str, skill_context: str, exam_board: str) -> str:
+    """Fallback question generation."""
+    return (
+        f"1. Explain the key concepts of {skill_name} as if you were answering a {exam_board} exam question.\n"
+        f"2. Describe one important process related to {skill_name} and why it matters.\n"
+        f"3. Give a short example of how {skill_name} would appear in an exam scenario."
+    )
 
 
 def generate_guidance_ai(skill_name: str, user_response: str, score: int) -> str:
@@ -351,6 +365,16 @@ def evaluate_response(skill_name, response):
     if "because" in lowered or "why" in lowered:
         score += 1
     return clamp(score * 20.0, 0.0, 100.0)
+
+
+def is_nonsensical_topic(topic: str) -> bool:
+    normalized = topic.strip().lower()
+    broad_terms = ["biology", "chemistry", "physics", "math", "mathematics", "history", "geography", "science", "english", "computer science", "subject"]
+    if any(normalized == term or normalized == f"{term}" for term in broad_terms):
+        return True
+    if ":" not in normalized and " " in normalized and len(normalized.split()) <= 2:
+        return True
+    return False
 
 
 def feedback_for(skill_name, score):
@@ -432,8 +456,9 @@ def register():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
-        if not username or not password:
-            flash("Please provide both a username and password.")
+        exam_board = request.form.get("exam_board", "IGCSE").strip() or "IGCSE"
+        if not username or not password or not exam_board:
+            flash("Please provide a username, password, and exam board.")
             return redirect(url_for("register"))
 
         conn = get_db()
@@ -443,7 +468,7 @@ def register():
             flash("That username is already taken.")
             return redirect(url_for("register"))
 
-        user = create_user(conn, username, password, "user")
+        user = create_user(conn, username, password, "user", exam_board)
         conn.commit()
         conn.close()
         session["user_id"] = user["id"]
@@ -495,8 +520,11 @@ def add_skill():
     usage_frequency = float(request.form.get("usage_frequency", 3))
 
     if not name or not context:
-        flash("Please provide both a skill name and context.")
+        flash("Please provide both a topic and context.")
         return redirect(url_for("index"))
+
+    if is_nonsensical_topic(name):
+        flash("That looks too broad or unclear. Try a specific exam topic like 'Biology: Transportation in Plants'.")
 
     selected_category = request.form.get("category", "").strip()
     category = selected_category or categorize_skill_ai(name, context)
@@ -540,7 +568,7 @@ def practice(skill_id):
 
     if not skill:
         conn.close()
-        flash("Skill not found.")
+        flash("Topic not found.")
         return redirect(url_for("index"))
 
     if request.method == "POST":
@@ -573,14 +601,16 @@ def practice(skill_id):
         flash(f"AI Guidance: {guidance}")
         return redirect(url_for("index"))
 
-    scenario = generate_scenario_ai(skill["name"], skill["context"], skill["category"] or "Other")
+    exam_board = current_user().get("exam_board", "IGCSE")
+    questions = generate_question_ai(skill["name"], skill["context"], skill["category"] or "Other", exam_board)
     practice_mode = get_practice_mode_data(skill["name"], skill["category"] or "Other")
     conn.close()
     return render_template(
         "practice.html",
         skill=dict(skill),
-        scenario=scenario,
+        questions=questions,
         practice_mode=practice_mode,
+        exam_board=exam_board,
     )
 
 

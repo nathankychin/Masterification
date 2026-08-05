@@ -16,8 +16,9 @@
     <p class="helper-pill" style="margin-top: 10px;">{{ practice_mode.helper }}</p>
   </div>
   <div class="card" style="background: rgba(255,255,255,0.04); margin: 12px 0;">
-    <h3>Exam-style scenario</h3>
-    <p>{{ scenario }}</p>
+    <h3>{{ exam_board }} exam questions</h3>
+    <p class="muted">Answer the questions below based on your selected topic.</p>
+    <pre style="white-space: pre-wrap; font-family: inherit;">{{ questions }}</pre>
   </div>
   <form action="{{ url_for('practice', skill_id=skill.id) }}" method="post">
     <textarea name="response" rows="8" placeholder="Write your exam-style answer here..." required style="min-height: 150px; resize: vertical;"></textarea>

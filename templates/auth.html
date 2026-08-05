@@ -5,6 +5,17 @@
   <form method="post">
     <input name="username" placeholder="Username" required>
     <input name="password" type="password" placeholder="Password" required>
+    {% if mode == 'register' %}
+      <label class="muted">Exam board</label>
+      <select name="exam_board" required>
+        <option value="">Select your exam board</option>
+        <option value="IGCSE">IGCSE</option>
+        <option value="A-level">A-level</option>
+        <option value="O-level">O-level</option>
+        <option value="GCSE">GCSE</option>
+        <option value="Other">Other</option>
+      </select>
+    {% endif %}
     <button type="submit">{{ 'Create account' if mode == 'register' else 'Login' }}</button>
   </form>
   <p class="muted" style="margin-top: 10px;">

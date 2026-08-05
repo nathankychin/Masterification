@@ -28,10 +28,11 @@
 
 <div class="grid-2">
   <div class="card">
-    <h3>Add a skill</h3>
+    <h3>Add a study topic</h3>
+    <p class="muted">Enter a specific topic, not the entire subject. Example: <strong>Biology: Transportation in Plants</strong>.</p>
     <form action="{{ url_for('add_skill') }}" method="post">
-      <input name="name" placeholder="Topic or subject" required>
-      <textarea name="context" placeholder="Why it matters / exam context / board or syllabus" rows="3" required></textarea>
+      <input name="name" placeholder="Specific topic (e.g. Transportation in Plants)" required>
+      <textarea name="context" placeholder="Why this topic matters / syllabus focus" rows="3" required></textarea>
       <label class="muted">Study category</label>
       <select name="category">
         <option value="">Auto-detect</option>
