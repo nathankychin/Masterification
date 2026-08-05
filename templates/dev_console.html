@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  {% if stats is none %}
+    <h2>Developer console</h2>
+    <p class="muted">Access is restricted to approved collaborators. Enter the admin credentials to view anonymized usage statistics.</p>
+    <form method="post">
+      <input name="username" placeholder="Admin username" required>
+      <input name="password" type="password" placeholder="Admin password" required>
+      <button type="submit">Open console</button>
+    </form>
+  {% else %}
+    <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
+      <h2>Developer console</h2>
+      <a href="{{ url_for('dev_console_logout') }}" class="btn-secondary" style="display: inline-block; padding: 10px 14px; border-radius: 999px; text-decoration: none;">Close session</a>
+    </div>
+    {% if stats.ai_enabled %}
+      <div class="flash" style="background: rgba(34, 197, 94, 0.2); border-color: #22c55e;">
+        ✓ AI features enabled (scenario generation, skill categorization, guided feedback)
+      </div>
+    {% else %}
+      <div class="flash" style="background: rgba(239, 68, 68, 0.2); border-color: #ef4444;">
+        ⚠ AI features disabled. Set OPENAI_API_KEY environment variable to enable.
+      </div>
+    {% endif %}
+    <div class="stats-grid" style="margin-top: 12px;">
+      <div class="stat"><strong>{{ stats.total_users }}</strong><div class="muted">Users</div></div>
+      <div class="stat"><strong>{{ stats.total_skills }}</strong><div class="muted">Skills tracked</div></div>
+      <div class="stat"><strong>{{ stats.total_practices }}</strong><div class="muted">Practice sessions</div></div>
+      <div class="stat"><strong>{{ stats.avg_ready }}%</strong><div class="muted">Average readiness</div></div>
+    </div>
+    <div class="grid-2" style="margin-top: 16px;">
+      <div class="card" style="background: rgba(255,255,255,0.04);">
+        <h3>Most practiced skills</h3>
+        <table class="table">
+          <thead><tr><th>Skill</th><th>Sessions</th></tr></thead>
+          <tbody>
+            {% for row in stats.top_skills %}
+              <tr><td>{{ row.name }}</td><td>{{ row.sessions }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      <div class="card" style="background: rgba(255,255,255,0.04);">
+        <h3>Readiness distribution</h3>
+        <table class=\"table\">
+          <thead><tr><th>Level</th><th>Count</th></tr></thead>
+          <tbody>
+            {% for bucket in stats.readiness_buckets %}
+              <tr><td>{% if bucket.bucket == 'red' %}🔴 Critical{% elif bucket.bucket == 'yellow' %}🟡 Caution{% else %}🟢 Ready{% endif %}</td><td>{{ bucket.count }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% if stats.categories %}
+      <div class=\"card\" style=\"background: rgba(255,255,255,0.04); margin-top: 12px;\">
+        <h3>Skills by category</h3>
+        <table class=\"table\">
+          <thead><tr><th>Category</th><th>Count</th></tr></thead>
+          <tbody>
+            {% for cat in stats.categories %}
+              <tr><td>{{ cat.category or 'Uncategorized' }}</td><td>{{ cat.count }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
+    <p class="muted">No personal information is stored in this console view. Only anonymized aggregate usage data is exposed.</p>
+  {% endif %}
+</div>
+{% endblock %}

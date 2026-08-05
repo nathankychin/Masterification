@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#07111f">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-title" content="Masterify">
+    <title>{{ app_name }} | Skill Readiness</title>
+    <style>
+      :root {
+        --bg: #07111f;
+        --panel: rgba(10, 19, 35, 0.8);
+        --panel-strong: rgba(16, 27, 47, 0.95);
+        --text: #f8fafc;
+        --muted: #94a3b8;
+        --accent: #60a5fa;
+        --accent-2: #a78bfa;
+        --border: rgba(255,255,255,0.12);
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, "Segoe UI", Arial, sans-serif;
+        color: var(--text);
+        background: radial-gradient(circle at top left, #1d4ed8, var(--bg) 50%);
+        min-height: 100dvh;
+        min-height: 100vh;
+        line-height: 1.5;
+        overflow-x: hidden;
+      }
+      .shell { max-width: 1240px; margin: 0 auto; padding: 24px; }
+      .topbar {
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 16px 20px; border: 1px solid var(--border); border-radius: 18px;
+        backdrop-filter: blur(16px); background: rgba(7, 17, 31, 0.75);
+        margin-bottom: 20px;
+        gap: 14px;
+      }
+      .brand { font-weight: 800; letter-spacing: 0.05em; }
+      .brand-sub { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+      .nav a, .nav button { color: white; text-decoration: none; margin-left: 10px; background: transparent; border: 1px solid var(--border); padding: 8px 12px; border-radius: 999px; }
+      .card {
+        background: var(--panel); border: 1px solid var(--border); border-radius: 22px;
+        padding: 20px; box-shadow: 0 18px 45px rgba(0,0,0,0.22); backdrop-filter: blur(14px);
+        margin-bottom: 18px;
+      }
+      .hero { display: grid; grid-template-columns: 1.3fr 0.9fr; gap: 18px; align-items: center; }
+      .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+      .stat { background: var(--panel-strong); border: 1px solid var(--border); padding: 14px; border-radius: 16px; }
+      form { display: grid; gap: 10px; }
+      input, textarea, select, button { font: inherit; padding: 12px 14px; border-radius: 12px; border: 1px solid var(--border); background: rgba(255,255,255,0.06); color: white; width: 100%; font-size: 16px; }
+      button, a { touch-action: manipulation; }
+      button { cursor: pointer; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: white; font-weight: 700; }
+      .btn-secondary { background: transparent; border: 1px solid var(--border); }
+      .skill-list { display: grid; gap: 14px; }
+      .skill-item { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px; border-radius: 18px; background: rgba(255,255,255,0.04); border: 1px solid var(--border); }
+      .skill-main { flex: 1; min-width: 0; }
+      .skill-side { min-width: 220px; display: grid; gap: 10px; }
+      .skill-meta-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+      .helper-pill { display: inline-flex; align-items: center; padding: 6px 10px; border-radius: 999px; background: rgba(255,255,255,0.08); color: var(--muted); font-size: 0.82rem; }
+      .skill-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+      .practice-link { color: #93c5fd; font-weight: 700; text-decoration: none; }
+      .practice-mode-card { background: rgba(255,255,255,0.04); border: 1px solid var(--border); border-radius: 18px; padding: 16px; margin: 14px 0 18px; }
+      .mic-button { display: inline-flex; align-items: center; justify-content: center; width: auto; padding: 10px 14px; }
+      .mic-button.recording { background: linear-gradient(135deg, #ef4444, #f97316); }
+      .skill-item.overdue { border-color: #f87171; box-shadow: inset 0 0 0 1px #f87171; }
+      .pill { display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 0.8rem; font-weight: 700; margin-bottom: 8px; }
+      .progress-track { width: 100%; height: 10px; border-radius: 999px; background: rgba(255,255,255,0.12); overflow: hidden; margin-top: 8px; }
+      .progress-fill { height: 100%; border-radius: inherit; }
+      .readiness-badge { min-width: 92px; padding: 14px; border-radius: 16px; color: white; font-weight: 800; text-align: center; }
+      .flash { background: rgba(34,197,94,0.16); color: #dcfce7; padding: 12px 14px; border-radius: 12px; margin-bottom: 12px; border: 1px solid rgba(34,197,94,0.25); }
+      .muted { color: var(--muted); }
+      .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+      .table { width: 100%; border-collapse: collapse; }
+      .table th, .table td { padding: 10px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+      @media (max-width: 900px) {
+        .hero, .grid-2 { grid-template-columns: 1fr; }
+        .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      }
+      @media (max-width: 600px) {
+        .shell { padding: 14px; }
+        .topbar { flex-direction: column; gap: 10px; align-items: flex-start; }
+        .stats-grid { grid-template-columns: 1fr; }
+        .skill-item { flex-direction: column; align-items: flex-start; }
+        .skill-side { width: 100%; min-width: 0; }
+        .skill-actions { flex-direction: column; align-items: flex-start; }
+        .nav { display: flex; flex-wrap: wrap; gap: 8px; }
+        .nav a, .nav button { margin-left: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header class="topbar">
+        <div>
+          <div class="brand">{{ app_name }}</div>
+          <div class="brand-sub">{{ app_domain }}</div>
+        </div>
+        <div class="nav">
+          {% if session.get('user_id') %}
+            <a href="{{ url_for('index') }}">Dashboard</a>
+            <a href="{{ url_for('dev_console') }}">Dev Console</a>
+            <a href="{{ url_for('logout') }}">Logout</a>
+          {% else %}
+            <a href="{{ url_for('login') }}">Login</a>
+            <a href="{{ url_for('register') }}">Create account</a>
+          {% endif %}
+        </div>
+      </header>
+
+      {% with messages = get_flashed_messages() %}
+        {% if messages %}
+          {% for message in messages %}
+            <div class="flash">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </body>
+</html>

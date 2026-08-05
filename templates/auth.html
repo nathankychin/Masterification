@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card" style="max-width: 480px; margin: 0 auto;">
+  <h2>{{ 'Create account' if mode == 'register' else 'Sign in' }}</h2>
+  <form method="post">
+    <input name="username" placeholder="Username" required>
+    <input name="password" type="password" placeholder="Password" required>
+    <button type="submit">{{ 'Create account' if mode == 'register' else 'Login' }}</button>
+  </form>
+  <p class="muted" style="margin-top: 10px;">
+    {% if mode == 'register' %}
+      Already have an account? <a href="{{ url_for('login') }}" style="color: #93c5fd;">Sign in</a>
+    {% else %}
+      New here? <a href="{{ url_for('register') }}" style="color: #93c5fd;">Create an account</a>
+    {% endif %}
+  </p>
+</div>
+{% endblock %}
