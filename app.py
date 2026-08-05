@@ -3,6 +3,7 @@ import os
 import random
 import sqlite3
 from datetime import datetime, timedelta
+from functools import wraps
 
 from flask import Flask, flash, redirect, render_template, request, session, url_for, jsonify
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -15,6 +16,13 @@ except ImportError:
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-please-change")
+app.permanent_session_lifetime = timedelta(days=30)
+app.config.update(
+    SESSION_COOKIE_SAMESITE="Lax",
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=os.environ.get("SESSION_COOKIE_SECURE", "0").lower() in {"1", "true", "yes", "on"},
+    SESSION_REFRESH_EACH_REQUEST=True,
+)
 
 # Logging: stream to stdout so Render captures stack traces and info
 import logging
@@ -35,6 +43,17 @@ app.config["PREFERRED_URL_SCHEME"] = os.environ.get("PREFERRED_URL_SCHEME", "htt
 @app.context_processor
 def inject_app_context():
     return {"app_name": APP_NAME, "app_domain": APP_DOMAIN}
+
+@app.before_request
+def refresh_permanent_session():
+    if session.get("user_id"):
+        session.permanent = True
+
+@app.after_request
+def set_security_headers(response):
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    return response
 
 if OPENAI_AVAILABLE and OPENAI_API_KEY:
     client = OpenAI(api_key=OPENAI_API_KEY)
@@ -276,11 +295,11 @@ def get_skill_category_fallback(skill_name: str) -> str:
 def generate_question_ai(skill_name: str, skill_context: str, category: str, exam_board: str) -> str:
     """Generate exam-style questions for a specific topic."""
     prompt_text = (
-        f"Create 3 exam-style {exam_board} questions for the topic '{skill_name}'. "
-        f"Use the subject context: {skill_context}. "
-        f"The questions should be appropriate for the grade level and should focus on the exact topic, not the whole subject. "
-        f"Keep the topic specific and use the exam board terminology. "
-        f"Return only the question text, each on its own line."
+        f"You are an exam question writer for {exam_board} preparation. "
+        f"Create 2 unique, topic-specific questions for the exact topic '{skill_name}'. "
+        f"Use the syllabus context: {skill_context}. "
+        f"These questions should be appropriate for the stated exam level and should focus on the exact topic rather than the whole subject. "
+        f"Return only the two question texts, each on its own line."
     )
     if not client:
         return generate_question_fallback(skill_name, skill_context, exam_board)
@@ -290,14 +309,14 @@ def generate_question_ai(skill_name: str, skill_context: str, category: str, exa
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an exam question writer. Create precise, topic-based questions at the correct level.",
+                    "content": "You are an expert exam question writer using a large language model. Generate high-quality, unique questions for a specific topic.",
                 },
                 {
                     "role": "user",
                     "content": prompt_text,
                 },
             ],
-            temperature=0.7,
+            temperature=0.8,
             max_tokens=220,
         )
         return response.choices[0].message.content.strip()
@@ -309,9 +328,8 @@ def generate_question_ai(skill_name: str, skill_context: str, category: str, exa
 def generate_question_fallback(skill_name: str, skill_context: str, exam_board: str) -> str:
     """Fallback question generation."""
     return (
-        f"1. Explain the key concepts of {skill_name} as if you were answering a {exam_board} exam question.\n"
-        f"2. Describe one important process related to {skill_name} and why it matters.\n"
-        f"3. Give a short example of how {skill_name} would appear in an exam scenario."
+        f"1. Explain the main concept within {skill_name} that would be tested by a {exam_board} question.\n"
+        f"2. Describe a specific application of {skill_name} or the process it covers in a way an exam answer would show."
     )
 
 
@@ -386,12 +404,12 @@ def feedback_for(skill_name, score):
 
 
 def login_required(route):
+    @wraps(route)
     def wrapper(*args, **kwargs):
         if not current_user():
             flash("Please sign in to continue.")
             return redirect(url_for("login"))
         return route(*args, **kwargs)
-    wrapper.__name__ = route.__name__
     return wrapper
 
 
@@ -472,7 +490,9 @@ def register():
         conn.commit()
         conn.close()
         session["user_id"] = user["id"]
-        flash("Account created successfully.")
+        session["role"] = user["role"]
+        session.permanent = True
+        flash("Account created successfully. Your device will stay signed in for 30 days.")
         return redirect(url_for("index"))
 
     return render_template("auth.html", mode="register")
@@ -494,7 +514,12 @@ def login():
         if user and check_password_hash(user["password_hash"], password):
             session["user_id"] = user["id"]
             session["role"] = user["role"]
-            flash("Welcome back.")
+            remember_device = request.form.get("remember_device", "on") == "on"
+            session.permanent = remember_device
+            if remember_device:
+                flash("Welcome back. This device will stay signed in for 30 days.")
+            else:
+                flash("Welcome back. This session will expire when you close your browser.")
             return redirect(url_for("index"))
 
         flash("Invalid username or password.")

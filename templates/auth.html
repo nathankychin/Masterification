@@ -5,6 +5,12 @@
   <form method="post">
     <input name="username" placeholder="Username" required>
     <input name="password" type="password" placeholder="Password" required>
+    {% if mode != 'register' %}
+      <label class="muted" style="display:flex; align-items:center; gap: 10px;">
+        <input type="checkbox" name="remember_device" checked>
+        Remember this device for 30 days
+      </label>
+    {% endif %}
     {% if mode == 'register' %}
       <label class="muted">Exam board</label>
       <select name="exam_board" required>
