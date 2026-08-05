@@ -16,6 +16,13 @@ except ImportError:
 app = Flask(__name__)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", "dev-secret-please-change")
 
+# Logging: stream to stdout so Render captures stack traces and info
+import logging
+logging.basicConfig(level=logging.INFO)
+handler = logging.StreamHandler()
+handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+app.logger.addHandler(handler)
+
 DATABASE = "skills.db"
 DEV_CONSOLE_PASSWORD = os.environ.get("DEV_CONSOLE_PASSWORD", "dev-console-2026")
 COLLAB_PASSWORD = os.environ.get("COLLAB_PASSWORD", "collab-console-2026")
@@ -631,6 +638,17 @@ def dev_console_logout():
     flash("Admin session closed.")
     return redirect(url_for("dev_console"))
 
+
+# Global error handler to ensure tracebacks appear in Render logs and return a simple message.
+@app.errorhandler(Exception)
+def handle_exception(e):
+    import traceback
+    tb = traceback.format_exc()
+    app.logger.error("Uncaught exception:\n%s", tb)
+    # Re-raise the exception in debug mode so Flask shows the interactive debugger if enabled
+    if os.environ.get("FLASK_DEBUG", "0").lower() in {"1", "true", "yes", "on"}:
+        raise
+    return ("Internal Server Error\nThe server encountered an internal error and was unable to complete your request.", 500)
 
 if __name__ == "__main__":
     debug_mode = os.environ.get("FLASK_DEBUG", "0").lower() in {"1", "true", "yes", "on"}
