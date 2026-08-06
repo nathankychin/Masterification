@@ -1,3 +1,4 @@
+import json
 import math
 import os
 import random
@@ -120,6 +121,16 @@ def ensure_user_exam_board_column(conn):
         conn.execute("ALTER TABLE users ADD COLUMN exam_board TEXT DEFAULT ''")
 
 
+def ensure_practice_logs_columns(conn):
+    existing = [row[1] for row in conn.execute("PRAGMA table_info(practice_logs)").fetchall()]
+    if "response_text" not in existing:
+        conn.execute("ALTER TABLE practice_logs ADD COLUMN response_text TEXT DEFAULT ''")
+    if "feedback_summary" not in existing:
+        conn.execute("ALTER TABLE practice_logs ADD COLUMN feedback_summary TEXT DEFAULT ''")
+    if "feedback_rubric" not in existing:
+        conn.execute("ALTER TABLE practice_logs ADD COLUMN feedback_rubric TEXT DEFAULT ''")
+
+
 def init_db(force=False):
     conn = get_db()
     if force:
@@ -170,11 +181,15 @@ def init_db(force=False):
             readiness_before REAL NOT NULL,
             readiness_after REAL NOT NULL,
             practiced_at TEXT NOT NULL,
+            response_text TEXT DEFAULT '',
+            feedback_summary TEXT DEFAULT '',
+            feedback_rubric TEXT DEFAULT '',
             FOREIGN KEY(user_id) REFERENCES users(id),
             FOREIGN KEY(skill_id) REFERENCES skills(id)
         )
         """
     )
+    ensure_practice_logs_columns(conn)
 
     create_user(conn, "admin", DEV_CONSOLE_PASSWORD, "admin")
     create_user(conn, "collab", COLLAB_PASSWORD, "admin")
@@ -297,7 +312,8 @@ def generate_question_ai(skill_name: str, skill_context: str, category: str, exa
     prompt_text = (
         f"You are an exam question writer for {exam_board} preparation. "
         f"Create 2 unique, topic-specific questions for the exact topic '{skill_name}'. "
-        f"Use the syllabus context: {skill_context}. "
+        f"Use the study topic description and context: {skill_context}. "
+        f"Tailor the questions and scenarios to the topic's purpose so they feel relevant to the learner's needs, not generic. "
         f"These questions should be appropriate for the stated exam level and should focus on the exact topic rather than the whole subject. "
         f"Return only the two question texts, each on its own line."
     )
@@ -333,30 +349,30 @@ def generate_question_fallback(skill_name: str, skill_context: str, exam_board: 
     )
 
 
-def generate_guidance_ai(skill_name: str, user_response: str, score: int) -> str:
+def generate_guidance_ai(skill_name: str, user_response: str, score: int, skill_context: str = "") -> str:
     """Generate personalized AI guidance."""
     if not client:
-        return feedback_for(skill_name, score)
+        return build_feedback_rubric(skill_name, user_response, score)["summary"]
     try:
         response = client.chat.completions.create(
             model="gpt-3.5-turbo",
             messages=[
                 {
                     "role": "system",
-                    "content": f"You are a tutor for {skill_name}. Analyze the response and provide: (1) What was done well, (2) What needs improvement, (3) One tip to practice. Be honest but encouraging. Keep it 3-4 sentences.",
+                    "content": f"You are a tutor for {skill_name}. Analyze the response and provide concise feedback with: (1) what was done well, (2) where marks were likely deducted, and (3) one practical next step. Use the topic description when relevant. Keep it 4-5 sentences.",
                 },
                 {
                     "role": "user",
-                    "content": f"My response: {user_response}\nMy score: {score}/100",
+                    "content": f"Topic: {skill_name}\nTopic description: {skill_context}\nMy response: {user_response}\nMy score: {score}/100",
                 },
             ],
             temperature=0.6,
-            max_tokens=200,
+            max_tokens=220,
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
         print(f"AI guidance failed: {e}")
-        return feedback_for(skill_name, score)
+        return build_feedback_rubric(skill_name, user_response, score)["summary"]
 
 
 def expected_keywords(skill_name):
@@ -378,11 +394,66 @@ def evaluate_response(skill_name, response):
     for keyword in expected_keywords(skill_name):
         if keyword in lowered:
             score += 1
-    if "first" in lowered and "steps" in lowered:
+
+    if len(response.strip()) >= 80:
+        score += 2
+    if len(response.strip()) >= 140:
+        score += 1
+    if "first" in lowered and ("steps" in lowered or "step" in lowered):
         score += 1
     if "because" in lowered or "why" in lowered:
         score += 1
-    return clamp(score * 20.0, 0.0, 100.0)
+    if any(marker in lowered for marker in ["for example", "such as", "however", "therefore", "because", "this shows", "in conclusion"]):
+        score += 1
+    if lowered.count(".") >= 2:
+        score += 1
+
+    base_score = clamp(score * 12.0, 0.0, 100.0)
+    if base_score < 25 and len(response.strip()) >= 40:
+        return 35.0
+    return base_score
+
+
+def build_feedback_rubric(skill_name, response, score):
+    lowered = (response or "").lower()
+    strengths = []
+    improvements = []
+
+    if score >= 80:
+        summary = f"Strong readiness for {skill_name}. Your answer was clear and showed solid recall of the key ideas."
+    elif score >= 60:
+        summary = f"Good progress for {skill_name}. Your answer showed useful understanding, but a few key points could be made clearer."
+    else:
+        summary = f"Moderate readiness for {skill_name}. The response showed some understanding, but key detail and structure were missing."
+
+    if len((response or "").strip()) >= 60:
+        strengths.append("Your answer included enough detail to show some reasoning rather than a one-line response.")
+    else:
+        improvements.append("Add more explanation so the answer feels complete rather than rushed.")
+
+    if any(marker in lowered for marker in ["because", "why", "therefore", "for example"]):
+        strengths.append("You explained some reasoning and connected ideas, which helps exam-style answers sound thoughtful.")
+    else:
+        improvements.append("Explain why each step or point matters so the examiner can see your reasoning.")
+
+    if "first" in lowered and ("steps" in lowered or "step" in lowered):
+        strengths.append("You outlined a logical order, which makes the answer easier to follow.")
+    else:
+        improvements.append("Structure the response with a clear sequence or step-by-step approach.")
+
+    if any(keyword in lowered for keyword in expected_keywords(skill_name)):
+        strengths.append("You included topic-specific terms that make the response more relevant.")
+    else:
+        improvements.append("Add the key topic terms or exam vocabulary that would earn marks.")
+
+    mark_deducted = round(max(0.0, 100.0 - score), 1)
+    return {
+        "summary": f"{summary}\nWhat you did well: {', '.join(strengths[:2]) if strengths else 'You attempted to answer directly and with some structure.'}\nWhere marks were deducted: {', '.join(improvements[:2]) if improvements else 'A few details could be strengthened.'}\nOverall mark deduction: {mark_deducted}%",
+        "strengths": strengths,
+        "improvements": improvements,
+        "score": round(score, 1),
+        "mark_deducted": mark_deducted,
+    }
 
 
 def is_nonsensical_topic(topic: str) -> bool:
@@ -606,6 +677,9 @@ def practice(skill_id):
         reminder_days = max(2, int(round((20 - score / 5) / max(1.0, calculate_risk_weight(dict(skill))))))
         next_review = now + timedelta(days=reminder_days)
 
+        rubric = build_feedback_rubric(skill["name"], response, score)
+        guidance = generate_guidance_ai(skill["name"], response, score, skill["context"])
+
         conn.execute(
             """
             UPDATE skills
@@ -615,14 +689,14 @@ def practice(skill_id):
             (clamp(after, 0.0, 100.0), reminder_days, now.isoformat(), next_review.isoformat(), skill_id),
         )
         conn.execute(
-            "INSERT INTO practice_logs (user_id, skill_id, score, readiness_before, readiness_after, practiced_at) VALUES (?, ?, ?, ?, ?, ?)",
-            (user["id"], skill_id, score, before, after, now.isoformat()),
+            "INSERT INTO practice_logs (user_id, skill_id, score, readiness_before, readiness_after, practiced_at, response_text, feedback_summary, feedback_rubric) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (user["id"], skill_id, score, before, after, now.isoformat(), response, guidance, json.dumps(rubric)),
         )
         conn.commit()
         conn.close()
 
-        guidance = generate_guidance_ai(skill["name"], response, score)
         flash(f"Readiness updated: {round(after, 1)}%")
+        flash(rubric["summary"])
         flash(f"AI Guidance: {guidance}")
         return redirect(url_for("index"))
 
@@ -637,6 +711,35 @@ def practice(skill_id):
         practice_mode=practice_mode,
         exam_board=exam_board,
     )
+
+
+@app.route("/revision/<int:log_id>")
+@login_required
+def revision_detail(log_id):
+    user = current_user()
+    conn = get_db()
+    log_entry = conn.execute(
+        """
+        SELECT practice_logs.*, skills.name AS skill_name, skills.context AS skill_context, skills.category AS skill_category
+        FROM practice_logs
+        JOIN skills ON skills.id = practice_logs.skill_id
+        WHERE practice_logs.id = ? AND practice_logs.user_id = ?
+        """,
+        (log_id, user["id"]),
+    ).fetchone()
+    conn.close()
+
+    if not log_entry:
+        flash("Revision entry not found.")
+        return redirect(url_for("index"))
+
+    rubric = {}
+    try:
+        rubric = json.loads(log_entry["feedback_rubric"] or "{}") if log_entry["feedback_rubric"] else {}
+    except json.JSONDecodeError:
+        rubric = {}
+
+    return render_template("revision_detail.html", practice_log=dict(log_entry), rubric=rubric)
 
 
 @app.route("/dev-console", methods=["GET", "POST"])
