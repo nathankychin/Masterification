@@ -71,7 +71,8 @@
       .progress-track { width: 100%; height: 10px; border-radius: 999px; background: rgba(255,255,255,0.12); overflow: hidden; margin-top: 8px; }
       .progress-fill { height: 100%; border-radius: inherit; }
       .readiness-badge { min-width: 92px; padding: 14px; border-radius: 16px; color: white; font-weight: 800; text-align: center; }
-      .flash { background: rgba(34,197,94,0.16); color: #dcfce7; padding: 12px 14px; border-radius: 12px; margin-bottom: 12px; border: 1px solid rgba(34,197,94,0.25); }
+      .flash { position: fixed; top: 14px; left: 50%; transform: translateX(-50%); z-index: 2000; max-width: 760px; width: min(calc(100% - 24px), 760px); background: rgba(34,197,94,0.16); color: #dcfce7; padding: 12px 14px; border-radius: 12px; margin-bottom: 12px; border: 1px solid rgba(34,197,94,0.25); box-shadow: 0 14px 36px rgba(0,0,0,0.24); }
+      .flash.is-hidden { opacity: 0; transform: translateX(-50%) translateY(-8px); pointer-events: none; transition: opacity 0.25s ease, transform 0.25s ease; }
       .muted { color: var(--muted); }
       .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
       .table { width: 100%; border-collapse: collapse; }
@@ -116,12 +117,20 @@
       {% with messages = get_flashed_messages() %}
         {% if messages %}
           {% for message in messages %}
-            <div class="flash">{{ message }}</div>
+            <div class="flash" data-flash-message>{{ message }}</div>
           {% endfor %}
         {% endif %}
       {% endwith %}
 
       {% block content %}{% endblock %}
     </div>
+    <script>
+      document.querySelectorAll('[data-flash-message]').forEach((node, index) => {
+        setTimeout(() => {
+          node.classList.add('is-hidden');
+          setTimeout(() => node.remove(), 260);
+        }, 5000 + index * 100);
+      });
+    </script>
   </body>
 </html>

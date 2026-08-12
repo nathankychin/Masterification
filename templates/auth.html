@@ -6,9 +6,9 @@
     <input name="username" placeholder="Username" required>
     <input name="password" type="password" placeholder="Password" required>
     {% if mode != 'register' %}
-      <label class="muted" style="display:flex; align-items:center; gap: 10px;">
-        <input type="checkbox" name="remember_device" checked>
-        Remember this device for 30 days
+      <label class="muted" style="display:flex; align-items:center; gap: 10px; flex-wrap: wrap; line-height: 1.3;">
+        <input type="checkbox" name="remember_device" checked style="width: auto; margin: 0;">
+        <span style="display: inline-block; margin-left: 2px;">Remember this device for 30 days</span>
       </label>
     {% endif %}
     {% if mode == 'register' %}

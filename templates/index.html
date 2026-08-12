@@ -60,9 +60,10 @@
         <tbody>
           {% for session in recent_sessions %}
             <tr>
-              <td>{{ session.skill_name }}</td>
+              <td><a href="{{ url_for('revision_detail', log_id=session.id) }}" style="color: #93c5fd; text-decoration: none;">{{ session.skill_name }}</a></td>
               <td>{{ session.score|round(1) }}%</td>
               <td>{{ session.practiced_at[:10] }}</td>
+              <td><a href="{{ url_for('revision_detail', log_id=session.id) }}" style="color: #93c5fd; text-decoration: none;">View</a></td>
             </tr>
           {% endfor %}
         </tbody>
