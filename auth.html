@@ -1,0 +1,35 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card" style="max-width: 480px; margin: 0 auto;">
+  <h2>{{ 'Create account' if mode == 'register' else 'Sign in' }}</h2>
+  <form method="post">
+    <input name="username" placeholder="Username" required>
+    <input name="password" type="password" placeholder="Password" required>
+    {% if mode != 'register' %}
+      <label class="muted" style="display:flex; align-items:center; gap: 10px; flex-wrap: wrap; line-height: 1.3;">
+        <input type="checkbox" name="remember_device" checked style="width: auto; margin: 0;">
+        <span style="display: inline-block; margin-left: 2px;">Remember this device for 30 days</span>
+      </label>
+    {% endif %}
+    {% if mode == 'register' %}
+      <label class="muted">Exam board</label>
+      <select name="exam_board" required>
+        <option value="">Select your exam board</option>
+        <option value="IGCSE">IGCSE</option>
+        <option value="A-level">A-level</option>
+        <option value="O-level">O-level</option>
+        <option value="GCSE">GCSE</option>
+        <option value="Other">Other</option>
+      </select>
+    {% endif %}
+    <button type="submit">{{ 'Create account' if mode == 'register' else 'Login' }}</button>
+  </form>
+  <p class="muted" style="margin-top: 10px;">
+    {% if mode == 'register' %}
+      Already have an account? <a href="{{ url_for('login') }}" style="color: #93c5fd;">Sign in</a>
+    {% else %}
+      New here? <a href="{{ url_for('register') }}" style="color: #93c5fd;">Create an account</a>
+    {% endif %}
+  </p>
+</div>
+{% endblock %}

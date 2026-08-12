@@ -1,0 +1,65 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="card">
+  <h2 style="margin-top: 0;">{{ skill.name }}</h2>
+  <span class="pill">{{ skill.category or 'Uncategorized' }}</span>
+  <p class="muted">{{ skill.context }}</p>
+  <div class="practice-mode-card">
+    <span class="pill">{{ practice_mode.type|title }} revision</span>
+    <h3>{{ practice_mode.title }}</h3>
+    <p class="muted"><strong>Prompt:</strong> {{ practice_mode.prompt }}</p>
+    <p>{{ practice_mode.instruction }}</p>
+    {% if practice_mode.type == 'speech' %}
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 10px;">
+        <button type="button" id="micToggleBtn" class="mic-button btn-secondary">Enable microphone</button>
+        <span id="micStatus" class="helper-pill">Microphone off</span>
+      </div>
+    {% endif %}
+    <p class="helper-pill" style="margin-top: 10px;">{{ practice_mode.helper }}</p>
+  </div>
+  <div class="card" style="background: rgba(255,255,255,0.04); margin: 12px 0;">
+    <h3>{{ exam_board }} exam questions</h3>
+    <p class="muted">Answer the questions below based on your selected topic.</p>
+    <pre style="white-space: pre-wrap; font-family: inherit;">{{ questions }}</pre>
+  </div>
+  <form action="{{ url_for('practice', skill_id=skill.id) }}" method="post">
+    <textarea name="response" rows="8" placeholder="Write your exam-style answer here..." required style="min-height: 150px; resize: vertical;"></textarea>
+    <button type="submit">Submit revision response</button>
+  </form>
+  {% if practice_mode.type == 'speech' %}
+    <script>
+      const micToggleBtn = document.getElementById('micToggleBtn');
+      const micStatus = document.getElementById('micStatus');
+      let stream = null;
+
+      if (micToggleBtn) {
+        micToggleBtn.addEventListener('click', async () => {
+          if (stream) {
+            stream.getTracks().forEach((track) => track.stop());
+            stream = null;
+            micToggleBtn.classList.remove('recording');
+            micStatus.textContent = 'Microphone off';
+            micToggleBtn.textContent = 'Enable microphone';
+            return;
+          }
+
+          if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            micStatus.textContent = 'Mic not supported';
+            return;
+          }
+
+          try {
+            stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            micToggleBtn.classList.add('recording');
+            micStatus.textContent = 'Listening via microphone';
+            micToggleBtn.textContent = 'Disable microphone';
+          } catch (error) {
+            micStatus.textContent = 'Microphone permission denied';
+          }
+        });
+      }
+    </script>
+  {% endif %}
+  <p><a href="{{ url_for('index') }}" style="color: #93c5fd;">← Back to dashboard</a></p>
+</div>
+{% endblock %}
