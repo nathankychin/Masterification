@@ -270,11 +270,11 @@ def generate_guidance_ai(skill_name: str, user_response: str, score: int) -> str
             messages=[
                 {
                     "role": "system",
-                    "content": f"You are a skilled tutor helping someone improve their {skill_name} readiness. Analyze their practice response and provide:
+                    "content": f"""You are a skilled tutor helping someone improve their {skill_name} readiness. Analyze their practice response and provide:
 1. What they did well
 2. What needs improvement
 3. A specific tip to practice next time
-Be encouraging but honest. Keep it brief (3-4 sentences).",
+Be encouraging but honest. Keep it brief (3-4 sentences).""",
                 },
                 {
                     "role": "user",
@@ -533,7 +533,7 @@ def practice(skill_id):
     return render_template(
         "practice.html",
         skill=dict(skill),
-        scenario=generate_scenario(skill["name"], skill["context"]),
+        scenario=generate_scenario_ai(skill["name"], skill["context"], skill.get("category", "Other")),
     )
 
 

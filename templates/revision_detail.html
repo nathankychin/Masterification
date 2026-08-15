@@ -16,25 +16,48 @@
 
   <div class="card" style="background: rgba(255,255,255,0.04); margin: 12px 0;">
     <h3>AI feedback rubric</h3>
-    <p class="muted">{{ rubric.summary or practice_log.feedback_summary or 'No detailed rubric available.' }}</p>
-    {% if rubric.strengths %}
+    <p class="muted">
+      {% if rubric and rubric.summary %}
+        {{ rubric.summary }}
+      {% elif practice_log.feedback_summary %}
+        {{ practice_log.feedback_summary }}
+      {% else %}
+        No detailed rubric available.
+      {% endif %}
+    </p>
+
+    {% set well = rubric.what_went_well if rubric and rubric.what_went_well is defined else (rubric.strengths if rubric and rubric.strengths is defined else None) %}
+    {% if well %}
       <h4>What you did well</h4>
       <ul>
-        {% for item in rubric.strengths %}
+        {% for item in well %}
           <li>{{ item }}</li>
         {% endfor %}
       </ul>
     {% endif %}
-    {% if rubric.improvements %}
+
+    {% set deducted = rubric.where_marks_were_deducted if rubric and rubric.where_marks_were_deducted is defined else (rubric.improvements if rubric and rubric.improvements is defined else None) %}
+    {% if deducted %}
       <h4>Where marks were deducted</h4>
       <ul>
-        {% for item in rubric.improvements %}
+        {% for item in deducted %}
           <li>{{ item }}</li>
         {% endfor %}
       </ul>
     {% endif %}
-    {% if rubric.mark_deducted is defined %}
-      <p class="helper-pill">Overall mark deduction: {{ rubric.mark_deducted }}%</p>
+
+    {% set to_improve = rubric.what_to_improve if rubric and rubric.what_to_improve is defined else None %}
+    {% if to_improve %}
+      <h4>What to improve</h4>
+      <ul>
+        {% for item in to_improve %}
+          <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+
+    {% if rubric and (rubric.mark_deducted_pct is defined or rubric.mark_deducted is defined) %}
+      <p class="helper-pill">Overall mark deduction: {{ (rubric.mark_deducted_pct if rubric.mark_deducted_pct is defined else rubric.mark_deducted) }}%</p>
     {% endif %}
   </div>
 

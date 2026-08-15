@@ -77,13 +77,15 @@ def get_practice_mode_data(skill_name: str, category: str = None):
     name = (skill_name or "").lower()
     category_name = (category or "").lower()
     if any(keyword in category_name for keyword in ["language", "linguistic", "literature", "english", "foreign"]) or any(keyword in name for keyword in ["english", "spanish", "french", "german", "chinese", "japanese", "korean", "language", "vocabulary", "literature"]):
+        # For languages, generate a fresh phrase or short passage so exercises vary.
+        phrase = generate_creative_phrase(skill_name or category or "language")
         return {
             "type": "speech",
             "title": "Answer aloud",
-            "prompt": "Explain this quote or passage in your own words: 'The only way out is through.'",
+            "prompt": f"Explain this short phrase or passage in your own words: '{phrase}'",
             "instruction": "Toggle the microphone and speak clearly as if you were answering an oral or speaking exam question.",
             "target": "Answer",
-            "helper": "Focus on clarity, structure, and key evidence when you speak.",
+            "helper": "Focus on clarity, structure, vocabulary and pronunciation when you speak.",
         }
     if any(keyword in category_name for keyword in ["math", "mathematics", "physics", "chemistry", "biology", "science"]) or any(keyword in name for keyword in ["math", "mathematics", "physics", "chemistry", "biology", "science"]):
         return {
@@ -307,16 +309,33 @@ def get_skill_category_fallback(skill_name: str) -> str:
     return "Other"
 
 
+def board_offers_topic(exam_board: str, skill_name: str, category: str = None) -> bool:
+    """Rudimentary check whether a study board typically offers this topic.
+
+    Returns False for clearly external/engineering/tertiary topics when the board is an exam-focused school board.
+    """
+    if not exam_board:
+        return True
+    b = (exam_board or "").strip().upper()
+    name = (skill_name or "").lower()
+    cat = (category or "").lower()
+    if b in {"IGCSE", "GCSE", "O-LEVEL"}:
+        # these school boards rarely include engineering/tertiary vocational topics
+        if any(k in name for k in ["electrical", "engineering", "circuit", "power systems"]) or any(k in cat for k in ["technical", "engineering"]):
+            return False
+    return True
+
+
 def generate_question_ai(skill_name: str, skill_context: str, category: str, exam_board: str) -> str:
     """Generate exam-style questions for a specific topic."""
+    # Produce two distinct questions: one testing core understanding, one testing application/analysis.
     prompt_text = (
         f"You are an exam question writer for {exam_board} preparation. "
-        f"Create 2 unique, topic-specific questions for the exact topic '{skill_name}'. "
-        f"Use the study topic description and context: {skill_context}. "
-        f"Tailor the questions and scenarios to the topic's purpose so they feel relevant to the learner's needs, not generic. "
-        f"These questions should be appropriate for the stated exam level and should focus on the exact topic rather than the whole subject. "
-        f"Return only the two question texts, each on its own line."
-    )
+        f"Create TWO distinct, high-quality questions for the exact topic '{skill_name}'. "
+        f"Question 1: test core understanding or the main concept (short answer or structured response). "
+        f"Question 2: test application, analysis, or an exam-style scenario related to the topic. "
+        f"Use the study topic description and context: {skill_context}. Make the wording natural for the subject; if the topic is a language, make one question focus on meaning/usage and the other on translation/production. "
+        f"Return only the two question texts, each labeled '1.' and '2.' on separate lines.")
     if not client:
         return generate_question_fallback(skill_name, skill_context, exam_board)
     try:
@@ -343,10 +362,73 @@ def generate_question_ai(skill_name: str, skill_context: str, category: str, exa
 
 def generate_question_fallback(skill_name: str, skill_context: str, exam_board: str) -> str:
     """Fallback question generation."""
+    # Provide clearer, more distinct fallback questions. Adapt wording slightly for language topics.
+    lname = (skill_name or "").lower()
+    if any(k in lname for k in ["english", "spanish", "french", "german", "chinese", "japanese", "language"]):
+        return (
+            f"1. In a short paragraph, explain the meaning or primary usage of the following topic: {skill_name}.\n"
+            f"2. Produce a short example (sentence or short paragraph) that demonstrates correct use of the topic, as an exam answer would show."
+        )
     return (
-        f"1. Explain the main concept within {skill_name} that would be tested by a {exam_board} question.\n"
-        f"2. Describe a specific application of {skill_name} or the process it covers in a way an exam answer would show."
+        f"1. Explain the key concept within '{skill_name}' that an {exam_board} marker would expect in a concise answer.\n"
+        f"2. Give a worked example or application of '{skill_name}' showing how you would structure an exam-style response to earn marks."
     )
+
+
+def generate_creative_phrase(topic_hint: str = None) -> str:
+    """Generate a short phrase or passage for language practice. Use the AI client if available, otherwise pick from a small fallback set."""
+    fallbacks = [
+        "The smallest act of kindness is worth more than the grandest intention.",
+        "A single conversation across the table with a wise person is worth a month's study of books.",
+        "When in doubt, take the next small step.",
+        "The river cuts through rock not because of its power but its persistence.",
+        "Learning a language opens a door to someone else's world."
+    ]
+    if client:
+        try:
+            prompt = f"Provide one short, natural-sounding phrase or sentence suitable for a language speaking or translation exercise. Keep it between 6 and 18 words. Context hint: {topic_hint or 'general'}"
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a creative phrase generator for language practice."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.9,
+                max_tokens=60,
+            )
+            text = response.choices[0].message.content.strip().split('\n')[0]
+            return text.strip(' "')
+        except Exception:
+            pass
+    return random.choice(fallbacks)
+
+
+@app.route("/api/phrase")
+def api_phrase():
+    topic = request.args.get("topic") or request.args.get("skill") or "general"
+    phrase = generate_creative_phrase(topic)
+    return jsonify({"phrase": phrase})
+
+
+def get_board_scoring_rules(exam_board: str) -> dict:
+    """Return scoring weights for simple rubric components per board."""
+    b = (exam_board or "").strip().upper()
+    # Base weights (how important each component is)
+    base = {
+        "keywords": 1.0,
+        "reasoning": 1.0,
+        "structure": 1.0,
+        "length": 0.8,
+        "markers": 0.8,
+        "sentences": 0.8,
+    }
+    if b in {"IGCSE", "GCSE", "O-LEVEL"}:
+        base.update({"keywords": 1.1, "reasoning": 1.1, "structure": 1.0, "length": 0.7})
+    elif b.startswith("A-LEVEL") or b == "A-LEVEL":
+        base.update({"keywords": 1.2, "reasoning": 1.3, "structure": 1.1, "length": 0.8})
+    elif b == "EXTERNAL":
+        base.update({"keywords": 0.9, "reasoning": 0.9, "length": 1.0})
+    return base
 
 
 def generate_guidance_ai(skill_name: str, user_response: str, score: int, skill_context: str = "") -> str:
@@ -388,13 +470,19 @@ def expected_keywords(skill_name):
     return ["first", "steps", "verify", "decision"]
 
 
-def evaluate_response(skill_name, response):
-    lowered = response.lower()
+def evaluate_response(skill_name, response, exam_board=None):
+    """Evaluate a free-text response and return a 0-100 score.
+
+    `exam_board` can slightly adjust strictness (IGCSE/GCSE/O-LEVEL stricter; A-LEVEL stricter still).
+    """
+    lowered = (response or "").lower()
     score = 0
-    for keyword in expected_keywords(skill_name):
+    keywords = expected_keywords(skill_name)
+    for keyword in keywords:
         if keyword in lowered:
             score += 1
 
+    # Reward reasonable length and structure
     if len(response.strip()) >= 80:
         score += 2
     if len(response.strip()) >= 140:
@@ -408,16 +496,39 @@ def evaluate_response(skill_name, response):
     if lowered.count(".") >= 2:
         score += 1
 
-    base_score = clamp(score * 12.0, 0.0, 100.0)
-    if base_score < 25 and len(response.strip()) >= 40:
+    # Base score from keyword hits
+    kw_hits = sum(1 for k in keywords if k in lowered)
+    kw_total = max(1, len(keywords))
+
+    # Feature sub-scores (out of 100 before weighting)
+    kw_score = (kw_hits / kw_total) * 40.0
+    reasoning_score = 20.0 if any(marker in lowered for marker in ["because", "why", "therefore", "for example"]) else 0.0
+    structure_score = 15.0 if ("first" in lowered and ("steps" in lowered or "step" in lowered)) else 0.0
+    length_score = 10.0 if len(response.strip()) >= 80 else 0.0
+    extra_length = 5.0 if len(response.strip()) >= 140 else 0.0
+    sentence_score = 10.0 if lowered.count(".") >= 2 else 0.0
+
+    rules = get_board_scoring_rules(exam_board or "")
+    total_raw = (
+        kw_score * rules.get("keywords", 1.0)
+        + reasoning_score * rules.get("reasoning", 1.0)
+        + structure_score * rules.get("structure", 1.0)
+        + (length_score + extra_length) * rules.get("length", 1.0)
+        + sentence_score * rules.get("sentences", 1.0)
+    )
+
+    # Normalize to 0-100
+    normalized = clamp(total_raw, 0.0, 100.0)
+    if normalized < 25 and len(response.strip()) >= 40:
         return 35.0
-    return base_score
+    return round(normalized, 1)
 
 
 def build_feedback_rubric(skill_name, response, score):
     lowered = (response or "").lower()
     strengths = []
     improvements = []
+    deductions = []
 
     if score >= 80:
         summary = f"Strong readiness for {skill_name}. Your answer was clear and showed solid recall of the key ideas."
@@ -427,33 +538,41 @@ def build_feedback_rubric(skill_name, response, score):
         summary = f"Moderate readiness for {skill_name}. The response showed some understanding, but key detail and structure were missing."
 
     if len((response or "").strip()) >= 60:
-        strengths.append("Your answer included enough detail to show some reasoning rather than a one-line response.")
+        strengths.append("Included enough detail to show reasoning beyond a one-line reply.")
     else:
-        improvements.append("Add more explanation so the answer feels complete rather than rushed.")
+        improvements.append("Add more explanation so answers are complete, not brief notes.")
+        deductions.append("Insufficient detail")
 
     if any(marker in lowered for marker in ["because", "why", "therefore", "for example"]):
-        strengths.append("You explained some reasoning and connected ideas, which helps exam-style answers sound thoughtful.")
+        strengths.append("Reasoning and linking of ideas was present.")
     else:
-        improvements.append("Explain why each step or point matters so the examiner can see your reasoning.")
+        improvements.append("Explicitly explain why points matter to show examiner your reasoning.")
+        deductions.append("Missing reasoning")
 
     if "first" in lowered and ("steps" in lowered or "step" in lowered):
-        strengths.append("You outlined a logical order, which makes the answer easier to follow.")
+        strengths.append("Logical sequence or steps make the answer easy to follow.")
     else:
-        improvements.append("Structure the response with a clear sequence or step-by-step approach.")
+        improvements.append("Structure the response with clear steps or paragraphs.")
+        deductions.append("Weak structure")
 
-    if any(keyword in lowered for keyword in expected_keywords(skill_name)):
-        strengths.append("You included topic-specific terms that make the response more relevant.")
+    keyword_hits = [k for k in expected_keywords(skill_name) if k in lowered]
+    if keyword_hits:
+        strengths.append(f"Used topic-specific terms: {', '.join(keyword_hits[:4])}.")
     else:
-        improvements.append("Add the key topic terms or exam vocabulary that would earn marks.")
+        improvements.append("Include exam vocabulary or key topic terms to earn content marks.")
+        deductions.append("Missing key terminology")
 
     mark_deducted = round(max(0.0, 100.0 - score), 1)
-    return {
-        "summary": f"{summary}\nWhat you did well: {', '.join(strengths[:2]) if strengths else 'You attempted to answer directly and with some structure.'}\nWhere marks were deducted: {', '.join(improvements[:2]) if improvements else 'A few details could be strengthened.'}\nOverall mark deduction: {mark_deducted}%",
-        "strengths": strengths,
-        "improvements": improvements,
+    human_readable = {
+        "summary": summary,
+        "what_went_well": strengths[:3],
+        "where_marks_were_deducted": deductions[:4] if deductions else ["A few details could be strengthened."],
+        "what_to_improve": improvements[:5],
         "score": round(score, 1),
-        "mark_deducted": mark_deducted,
+        "mark_deducted_pct": mark_deducted,
     }
+
+    return human_readable
 
 
 def is_nonsensical_topic(topic: str) -> bool:
@@ -669,7 +788,13 @@ def practice(skill_id):
 
     if request.method == "POST":
         response = request.form.get("response", "")
-        score = evaluate_response(skill["name"], response)
+        exam_board = current_user().get("exam_board", "IGCSE")
+        # If the user's selected board doesn't typically offer this topic, flag as external
+        if not board_offers_topic(exam_board, skill["name"], skill.get("category")):
+            eval_board = "EXTERNAL"
+        else:
+            eval_board = exam_board
+        score = evaluate_response(skill["name"], response, exam_board=eval_board)
         before = projected_readiness(dict(skill), skill["days_since_practice"])
         after = (before * 0.6) + (score * 0.4)
 
@@ -688,17 +813,16 @@ def practice(skill_id):
             """,
             (clamp(after, 0.0, 100.0), reminder_days, now.isoformat(), next_review.isoformat(), skill_id),
         )
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO practice_logs (user_id, skill_id, score, readiness_before, readiness_after, practiced_at, response_text, feedback_summary, feedback_rubric) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (user["id"], skill_id, score, before, after, now.isoformat(), response, guidance, json.dumps(rubric)),
         )
+        log_id = cur.lastrowid if hasattr(cur, "lastrowid") else conn.execute("SELECT last_insert_rowid()").fetchone()[0]
         conn.commit()
         conn.close()
 
-        flash(f"Readiness updated: {round(after, 1)}%")
-        flash(rubric["summary"])
-        flash(f"AI Guidance: {guidance}")
-        return redirect(url_for("index"))
+        # Redirect to a dedicated revision/feedback page so flashes don't overlap on the dashboard
+        return redirect(url_for("revision_detail", log_id=log_id))
 
     exam_board = current_user().get("exam_board", "IGCSE")
     questions = generate_question_ai(skill["name"], skill["context"], skill["category"] or "Other", exam_board)
