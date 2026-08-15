@@ -3,6 +3,7 @@ import math
 import os
 import random
 import sqlite3
+import urllib.parse
 from datetime import datetime, timedelta
 from functools import wraps
 
@@ -32,7 +33,18 @@ handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
 app.logger.addHandler(handler)
 
-DATABASE = "skills.db"
+DATABASE = os.environ.get("DATABASE", "skills.db")
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+
+# Postgres support (optional)
+POSTGRES_AVAILABLE = False
+try:
+    if DATABASE_URL:
+        import psycopg
+        from psycopg.rows import dict_row
+        POSTGRES_AVAILABLE = True
+except Exception:
+    POSTGRES_AVAILABLE = False
 DEV_CONSOLE_PASSWORD = os.environ.get("DEV_CONSOLE_PASSWORD", "dev-console-2026")
 COLLAB_PASSWORD = os.environ.get("COLLAB_PASSWORD", "collab-console-2026")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
@@ -63,9 +75,96 @@ else:
 
 
 def get_db():
+    """Return a DB connection wrapper that supports execute(...).
+
+    Uses SQLite when no `DATABASE_URL` is set, otherwise uses Postgres via psycopg.
+    """
+    class CursorWrapper:
+        def __init__(self, cur, pg=False):
+            self.cur = cur
+            self.pg = pg
+            self.lastrowid = None
+
+        def fetchone(self):
+            row = self.cur.fetchone()
+            if row is None:
+                return None
+            if self.pg:
+                cols = [d.name for d in self.cur.description]
+                return dict(zip(cols, row))
+            try:
+                return dict(row)
+            except Exception:
+                cols = [d[0] for d in self.cur.description]
+                return dict(zip(cols, row))
+
+        def fetchall(self):
+            rows = self.cur.fetchall()
+            if self.pg:
+                cols = [d.name for d in self.cur.description]
+                return [dict(zip(cols, r)) for r in rows]
+            try:
+                return [dict(r) for r in rows]
+            except Exception:
+                cols = [d[0] for d in self.cur.description]
+                return [dict(zip(cols, r)) for r in rows]
+
+    class DBConnWrapper:
+        def __init__(self, conn, pg=False):
+            self.conn = conn
+            self.pg = pg
+
+        def execute(self, sql, params=()):
+            cur = self.conn.cursor()
+            if self.pg:
+                # adapt sqlite-style '?' placeholders to psycopg '%s'
+                sql = sql.replace('?', '%s')
+                # For Postgres, ensure we return id for INSERTs when caller expects it
+                needs_returning = sql.strip().upper().startswith("INSERT") and "RETURNING" not in sql.upper()
+                if needs_returning:
+                    sql = sql.rstrip(';') + " RETURNING id"
+                cur.execute(sql, params)
+                wrapper = CursorWrapper(cur, pg=True)
+                # If an INSERT with RETURNING, capture lastrowid
+                if wrapper.cur.description and wrapper.cur.rowcount >= 0:
+                    try:
+                        first = cur.fetchone()
+                        if first:
+                            cols = [d.name for d in cur.description]
+                            if 'id' in cols:
+                                wrapper.lastrowid = first[cols.index('id')]
+                                # move cursor state back for fetchone/fetchall if needed
+                    except Exception:
+                        pass
+                return wrapper
+            else:
+                cur.execute(sql, params)
+                wrapper = CursorWrapper(cur, pg=False)
+                # sqlite3 cursor has lastrowid attribute
+                try:
+                    wrapper.lastrowid = cur.lastrowid
+                except Exception:
+                    wrapper.lastrowid = None
+                return wrapper
+
+        def commit(self):
+            try:
+                self.conn.commit()
+            except Exception:
+                pass
+
+        def close(self):
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+
+    if POSTGRES_AVAILABLE:
+        conn = psycopg.connect(DATABASE_URL)
+        return DBConnWrapper(conn, pg=True)
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
-    return conn
+    return DBConnWrapper(conn, pg=False)
 
 
 @app.route("/healthz")
@@ -118,85 +217,177 @@ def create_user(conn, username, password, role="user", exam_board=""):
 
 
 def ensure_user_exam_board_column(conn):
-    existing = [row[1] for row in conn.execute("PRAGMA table_info(users)").fetchall()]
-    if "exam_board" not in existing:
-        conn.execute("ALTER TABLE users ADD COLUMN exam_board TEXT DEFAULT ''")
+    try:
+        rows = conn.execute("PRAGMA table_info(users)").fetchall()
+        existing = []
+        for row in rows:
+            if isinstance(row, dict):
+                existing.append(row.get('name'))
+            else:
+                # fallback to index-based row
+                existing.append(row[1] if len(row) > 1 else None)
+        if "exam_board" not in existing:
+            conn.execute("ALTER TABLE users ADD COLUMN exam_board TEXT DEFAULT ''")
+    except Exception:
+        # For Postgres or other DBs, check information_schema
+        res = conn.execute("SELECT column_name FROM information_schema.columns WHERE table_name='users' AND column_name='exam_board'").fetchone()
+        if not res:
+            conn.execute("ALTER TABLE users ADD COLUMN exam_board TEXT DEFAULT ''")
 
 
 def ensure_practice_logs_columns(conn):
-    existing = [row[1] for row in conn.execute("PRAGMA table_info(practice_logs)").fetchall()]
-    if "response_text" not in existing:
-        conn.execute("ALTER TABLE practice_logs ADD COLUMN response_text TEXT DEFAULT ''")
-    if "feedback_summary" not in existing:
-        conn.execute("ALTER TABLE practice_logs ADD COLUMN feedback_summary TEXT DEFAULT ''")
-    if "feedback_rubric" not in existing:
-        conn.execute("ALTER TABLE practice_logs ADD COLUMN feedback_rubric TEXT DEFAULT ''")
+    try:
+        rows = conn.execute("PRAGMA table_info(practice_logs)").fetchall()
+        existing = []
+        for row in rows:
+            if isinstance(row, dict):
+                existing.append(row.get('name'))
+            else:
+                existing.append(row[1] if len(row) > 1 else None)
+        if "response_text" not in existing:
+            conn.execute("ALTER TABLE practice_logs ADD COLUMN response_text TEXT DEFAULT ''")
+        if "feedback_summary" not in existing:
+            conn.execute("ALTER TABLE practice_logs ADD COLUMN feedback_summary TEXT DEFAULT ''")
+        if "feedback_rubric" not in existing:
+            conn.execute("ALTER TABLE practice_logs ADD COLUMN feedback_rubric TEXT DEFAULT ''")
+    except Exception:
+        # Postgres information_schema check
+        cols = [c['column_name'] for c in conn.execute("SELECT column_name FROM information_schema.columns WHERE table_name='practice_logs'").fetchall()]
+        if 'response_text' not in cols:
+            conn.execute("ALTER TABLE practice_logs ADD COLUMN response_text TEXT DEFAULT ''")
+        if 'feedback_summary' not in cols:
+            conn.execute("ALTER TABLE practice_logs ADD COLUMN feedback_summary TEXT DEFAULT ''")
+        if 'feedback_rubric' not in cols:
+            conn.execute("ALTER TABLE practice_logs ADD COLUMN feedback_rubric TEXT DEFAULT ''")
 
 
 def init_db(force=False):
     conn = get_db()
     if force:
-        conn.execute("DROP TABLE IF EXISTS practice_logs")
-        conn.execute("DROP TABLE IF EXISTS skills")
-        conn.execute("DROP TABLE IF EXISTS users")
+        try:
+            conn.execute("DROP TABLE IF EXISTS practice_logs")
+            conn.execute("DROP TABLE IF EXISTS skills")
+            conn.execute("DROP TABLE IF EXISTS users")
+        except Exception:
+            pass
 
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'user',
-            created_at TEXT NOT NULL,
-            exam_board TEXT DEFAULT ''
+    # Use DB-specific CREATE statements for Postgres vs SQLite
+    if POSTGRES_AVAILABLE:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                created_at TEXT NOT NULL,
+                exam_board TEXT DEFAULT ''
+            )
+            """
         )
-        """
-    )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS skills (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                context TEXT NOT NULL,
+                importance REAL NOT NULL,
+                usage_frequency REAL NOT NULL,
+                readiness REAL NOT NULL,
+                days_since_practice INTEGER NOT NULL,
+                reminder_days INTEGER NOT NULL,
+                category TEXT DEFAULT 'Other',
+                last_practiced_at TEXT,
+                next_review_at TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS practice_logs (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                skill_id INTEGER NOT NULL,
+                score REAL NOT NULL,
+                readiness_before REAL NOT NULL,
+                readiness_after REAL NOT NULL,
+                practiced_at TEXT NOT NULL,
+                response_text TEXT DEFAULT '',
+                feedback_summary TEXT DEFAULT '',
+                feedback_rubric TEXT DEFAULT '',
+                FOREIGN KEY(user_id) REFERENCES users(id),
+                FOREIGN KEY(skill_id) REFERENCES skills(id)
+            )
+            """
+        )
+    else:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE NOT NULL,
+                password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                created_at TEXT NOT NULL,
+                exam_board TEXT DEFAULT ''
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS skills (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                context TEXT NOT NULL,
+                importance REAL NOT NULL,
+                usage_frequency REAL NOT NULL,
+                readiness REAL NOT NULL,
+                days_since_practice INTEGER NOT NULL,
+                reminder_days INTEGER NOT NULL,
+                category TEXT DEFAULT 'Other',
+                last_practiced_at TEXT,
+                next_review_at TEXT,
+                created_at TEXT NOT NULL,
+                FOREIGN KEY(user_id) REFERENCES users(id)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS practice_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                skill_id INTEGER NOT NULL,
+                score REAL NOT NULL,
+                readiness_before REAL NOT NULL,
+                readiness_after REAL NOT NULL,
+                practiced_at TEXT NOT NULL,
+                response_text TEXT DEFAULT '',
+                feedback_summary TEXT DEFAULT '',
+                feedback_rubric TEXT DEFAULT '',
+                FOREIGN KEY(user_id) REFERENCES users(id),
+                FOREIGN KEY(skill_id) REFERENCES skills(id)
+            )
+            """
+        )
+
     ensure_user_exam_board_column(conn)
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS skills (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            name TEXT NOT NULL,
-            context TEXT NOT NULL,
-            importance REAL NOT NULL,
-            usage_frequency REAL NOT NULL,
-            readiness REAL NOT NULL,
-            days_since_practice INTEGER NOT NULL,
-            reminder_days INTEGER NOT NULL,
-            category TEXT DEFAULT 'Other',
-            last_practiced_at TEXT,
-            next_review_at TEXT,
-            created_at TEXT NOT NULL,
-            FOREIGN KEY(user_id) REFERENCES users(id)
-        )
-        """
-    )
-    conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS practice_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
-            skill_id INTEGER NOT NULL,
-            score REAL NOT NULL,
-            readiness_before REAL NOT NULL,
-            readiness_after REAL NOT NULL,
-            practiced_at TEXT NOT NULL,
-            response_text TEXT DEFAULT '',
-            feedback_summary TEXT DEFAULT '',
-            feedback_rubric TEXT DEFAULT '',
-            FOREIGN KEY(user_id) REFERENCES users(id),
-            FOREIGN KEY(skill_id) REFERENCES skills(id)
-        )
-        """
-    )
     ensure_practice_logs_columns(conn)
 
     create_user(conn, "admin", DEV_CONSOLE_PASSWORD, "admin")
     create_user(conn, "collab", COLLAB_PASSWORD, "admin")
-    conn.commit()
-    conn.close()
+    try:
+        conn.commit()
+    except Exception:
+        pass
+    try:
+        conn.close()
+    except Exception:
+        pass
 
 
 force_reset = os.environ.get("RESET_DB", "").lower() in {"1", "true", "yes", "on"}
