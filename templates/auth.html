@@ -4,7 +4,10 @@
   <h2>{{ 'Create account' if mode == 'register' else 'Sign in' }}</h2>
   <form method="post">
     <input name="username" placeholder="Username" required>
-    <input name="password" type="password" placeholder="Password" required>
+    <div style="position:relative; display:flex; align-items:center;">
+      <input id="passwordInput" name="password" type="password" placeholder="Password" required style="flex:1; padding-right:36px;">
+      <button type="button" id="togglePassword" aria-label="Show password" title="Show password" style="position:absolute; right:6px; background:transparent; border:0; cursor:pointer; font-size:16px;">👁️</button>
+    </div>
     {% if mode != 'register' %}
       <label class="muted" style="display:flex; align-items:center; gap: 10px; flex-wrap: wrap; line-height: 1.3;">
         <input type="checkbox" name="remember_device" checked style="width: auto; margin: 0;">
@@ -32,4 +35,23 @@
     {% endif %}
   </p>
 </div>
+<script>
+  (function(){
+    const toggle = document.getElementById('togglePassword');
+    const pwd = document.getElementById('passwordInput');
+    if (toggle && pwd) {
+      toggle.addEventListener('click', () => {
+        if (pwd.type === 'password') {
+          pwd.type = 'text';
+          toggle.textContent = '🙈';
+          toggle.title = 'Hide password';
+        } else {
+          pwd.type = 'password';
+          toggle.textContent = '👁️';
+          toggle.title = 'Show password';
+        }
+      });
+    }
+  })();
+</script>
 {% endblock %}
