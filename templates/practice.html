@@ -33,6 +33,30 @@
     <textarea name="response" rows="8" placeholder="Write your exam-style answer here..." required style="min-height: 150px; resize: vertical;"></textarea>
     <button type="submit">Submit revision response</button>
   </form>
+  <!-- Inactivity notice: users may lose progress if the service sleeps or reloads -->
+  <div id="inactivityNotice" style="margin-top:12px; padding:10px; background: rgba(255,255,255,0.03); border-radius:6px; display:none; position:relative;">
+    <div style="display:flex; align-items:flex-start; gap:8px;">
+      <div style="flex:1;">
+        <strong>Note:</strong> Long responses may be lost if the service becomes inactive or the page reloads. We recommend saving long answers elsewhere first, or keeping replies under 10–20 minutes when possible.
+      </div>
+      <button id="dismissNotice" style="background:transparent;border:0;color:#93c5fd;cursor:pointer;">Dismiss</button>
+    </div>
+  </div>
+  <script>
+    (function(){
+      const notice = document.getElementById('inactivityNotice');
+      const dismiss = document.getElementById('dismissNotice');
+      const storageKey = 'masterify_hide_inactivity_notice_v1';
+      // Show notice only when not dismissed
+      if (!localStorage.getItem(storageKey)) {
+        notice.style.display = 'block';
+      }
+      dismiss.addEventListener('click', () => {
+        localStorage.setItem(storageKey, '1');
+        notice.style.display = 'none';
+      });
+    })();
+  </script>
   {% if practice_mode.type == 'speech' %}
     <script>
       const micToggleBtn = document.getElementById('micToggleBtn');
