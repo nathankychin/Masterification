@@ -44,3 +44,5 @@ python -m venv venv
 pip install -r requirements.txt
 pytest -q
 ```
+
+Trigger rebuild: bump
