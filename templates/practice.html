@@ -14,6 +14,13 @@
         <button type="button" id="micToggleBtn" class="mic-button btn-secondary">Enable microphone</button>
         <span id="micStatus" class="helper-pill">Microphone off</span>
       </div>
+      <div style="margin-top:10px;">
+        <div style="display:flex; gap:10px; align-items:center;">
+          <strong>Phrase:</strong>
+          <div id="phraseText" style="padding:6px 10px; background: rgba(0,0,0,0.03); border-radius:6px;">{{ practice_mode.prompt }}</div>
+          <button type="button" id="regenPhrase" class="btn-secondary">Regenerate</button>
+        </div>
+      </div>
     {% endif %}
     <p class="helper-pill" style="margin-top: 10px;">{{ practice_mode.helper }}</p>
   </div>
@@ -56,6 +63,23 @@
           } catch (error) {
             micStatus.textContent = 'Microphone permission denied';
           }
+        });
+      }
+    </script>
+    <script>
+      const regenBtn = document.getElementById('regenPhrase');
+      const phraseText = document.getElementById('phraseText');
+      if (regenBtn) {
+        regenBtn.addEventListener('click', async () => {
+          regenBtn.disabled = true;
+          try {
+            const resp = await fetch(`/api/phrase?topic=${encodeURIComponent('{{ skill.name }}')}`);
+            const data = await resp.json();
+            if (data && data.phrase) phraseText.textContent = data.phrase;
+          } catch (e) {
+            console.error(e);
+          }
+          regenBtn.disabled = false;
         });
       }
     </script>
