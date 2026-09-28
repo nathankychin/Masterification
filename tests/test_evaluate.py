@@ -14,6 +14,13 @@ def test_evaluate_alevel_higher_requirement():
     assert score <= 40
 
 
+def test_igcse_weak_answer_is_penalized_without_structure():
+    weak = "This is a short answer because it matters."
+    strong = "First, identify the steps. Then, because the equation depends on the ratio, explain the method clearly."
+    assert evaluate_response("Chemistry", weak, exam_board="IGCSE") <= 30
+    assert evaluate_response("Chemistry", strong, exam_board="IGCSE") >= 50
+
+
 def test_generate_phrase_nonempty():
     phrase = generate_creative_phrase('general')
     assert isinstance(phrase, str) and len(phrase) > 5

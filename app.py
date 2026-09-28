@@ -175,18 +175,30 @@ def healthz():
 def get_practice_mode_data(skill_name: str, category: str = None):
     name = (skill_name or "").lower()
     category_name = (category or "").lower()
-    if any(keyword in category_name for keyword in ["language", "linguistic", "literature", "english", "foreign"]) or any(keyword in name for keyword in ["english", "spanish", "french", "german", "chinese", "japanese", "korean", "language", "vocabulary", "literature"]):
-        # For languages, generate a fresh phrase or short passage so exercises vary.
+    language_keywords = ["language", "linguistic", "literature", "english", "foreign", "spanish", "french", "german", "chinese", "japanese", "korean", "vocabulary", "sentence", "grammar"]
+    music_keywords = ["music", "musical", "piano", "guitar", "violin", "drums", "voice", "chord", "melody", "song"]
+    science_keywords = ["math", "mathematics", "physics", "chemistry", "biology", "science"]
+
+    if any(keyword in category_name for keyword in language_keywords) or any(keyword in name for keyword in language_keywords):
         phrase = generate_creative_phrase(skill_name or category or "language")
         return {
             "type": "speech",
             "title": "Answer aloud",
-            "prompt": f"Explain this short phrase or passage in your own words: '{phrase}'",
+            "prompt": f"Explain the meaning and tone of this phrase in your own words: '{phrase}'",
             "instruction": "Toggle the microphone and speak clearly as if you were answering an oral or speaking exam question.",
             "target": "Answer",
-            "helper": "Focus on clarity, structure, vocabulary and pronunciation when you speak.",
+            "helper": "Focus on clarity, structure, and key evidence when you speak.",
         }
-    if any(keyword in category_name for keyword in ["math", "mathematics", "physics", "chemistry", "biology", "science"]) or any(keyword in name for keyword in ["math", "mathematics", "physics", "chemistry", "biology", "science"]):
+    if any(keyword in category_name for keyword in music_keywords) or any(keyword in name for keyword in music_keywords):
+        return {
+            "type": "music",
+            "title": "Perform the idea",
+            "prompt": "Describe a short chord or melodic idea and explain how it creates mood or emphasis in a musical phrase.",
+            "instruction": "Use the microphone or a quick written note to explain the chord, timing, and musical intention as if answering an exam-style performance question.",
+            "target": "Performance",
+            "helper": "Focus on emotional effect, structure, and the purpose of the chord or phrase.",
+        }
+    if any(keyword in category_name for keyword in science_keywords) or any(keyword in name for keyword in science_keywords):
         return {
             "type": "text",
             "title": "Solve the problem",
@@ -667,6 +679,7 @@ def evaluate_response(skill_name, response, exam_board=None):
     `exam_board` can slightly adjust strictness (IGCSE/GCSE/O-LEVEL stricter; A-LEVEL stricter still).
     """
     lowered = (response or "").lower()
+    response_text = response or ""
     score = 0
     keywords = expected_keywords(skill_name)
     for keyword in keywords:
@@ -674,9 +687,9 @@ def evaluate_response(skill_name, response, exam_board=None):
             score += 1
 
     # Reward reasonable length and structure
-    if len(response.strip()) >= 80:
+    if len(response_text.strip()) >= 80:
         score += 2
-    if len(response.strip()) >= 140:
+    if len(response_text.strip()) >= 140:
         score += 1
     if "first" in lowered and ("steps" in lowered or "step" in lowered):
         score += 1
@@ -695,8 +708,8 @@ def evaluate_response(skill_name, response, exam_board=None):
     kw_score = (kw_hits / kw_total) * 40.0
     reasoning_score = 20.0 if any(marker in lowered for marker in ["because", "why", "therefore", "for example"]) else 0.0
     structure_score = 15.0 if ("first" in lowered and ("steps" in lowered or "step" in lowered)) else 0.0
-    length_score = 10.0 if len(response.strip()) >= 80 else 0.0
-    extra_length = 5.0 if len(response.strip()) >= 140 else 0.0
+    length_score = 10.0 if len(response_text.strip()) >= 80 else 0.0
+    extra_length = 5.0 if len(response_text.strip()) >= 140 else 0.0
     sentence_score = 10.0 if lowered.count(".") >= 2 else 0.0
 
     rules = get_board_scoring_rules(exam_board or "")
@@ -708,10 +721,27 @@ def evaluate_response(skill_name, response, exam_board=None):
         + sentence_score * rules.get("sentences", 1.0)
     )
 
-    # Normalize to 0-100
-    normalized = clamp(total_raw, 0.0, 100.0)
-    if normalized < 25 and len(response.strip()) >= 40:
-        return 35.0
+    # Board-specific strictness: school-board answers need clearer structure and method.
+    board_name = (exam_board or "").upper()
+    board_penalty = 0.0
+    if board_name in {"IGCSE", "GCSE", "O-LEVEL"}:
+        if len(response_text.strip()) < 50:
+            board_penalty += 12.0
+        if not any(marker in lowered for marker in ["first", "step", "because", "therefore", "however", "for example"]):
+            board_penalty += 10.0
+        if not ("first" in lowered and ("steps" in lowered or "step" in lowered)):
+            board_penalty += 8.0
+    elif board_name.startswith("A-LEVEL") or board_name == "A-LEVEL":
+        if len(response_text.strip()) < 80:
+            board_penalty += 12.0
+        if not any(marker in lowered for marker in ["because", "therefore", "however", "in conclusion", "this suggests", "as a result"]):
+            board_penalty += 10.0
+        if not ("first" in lowered and ("steps" in lowered or "step" in lowered)):
+            board_penalty += 5.0
+
+    normalized = clamp(total_raw - board_penalty, 0.0, 100.0)
+    if normalized < 25 and len(response_text.strip()) >= 40:
+        return 30.0
     return round(normalized, 1)
 
 
@@ -723,10 +753,13 @@ def build_feedback_rubric(skill_name, response, score):
 
     if score >= 80:
         summary = f"Strong readiness for {skill_name}. Your answer was clear and showed solid recall of the key ideas."
+        overall_readiness = "Strong overall readiness"
     elif score >= 60:
         summary = f"Good progress for {skill_name}. Your answer showed useful understanding, but a few key points could be made clearer."
+        overall_readiness = "Moderate-to-strong overall readiness"
     else:
         summary = f"Moderate readiness for {skill_name}. The response showed some understanding, but key detail and structure were missing."
+        overall_readiness = "Developing readiness"
 
     if len((response or "").strip()) >= 60:
         strengths.append("Included enough detail to show reasoning beyond a one-line reply.")
@@ -754,8 +787,11 @@ def build_feedback_rubric(skill_name, response, score):
         deductions.append("Missing key terminology")
 
     mark_deducted = round(max(0.0, 100.0 - score), 1)
+    board_fit = "Board-aligned" if score >= 65 else "Needs more board-specific detail"
     human_readable = {
         "summary": summary,
+        "overall_readiness": overall_readiness,
+        "board_fit": board_fit,
         "what_went_well": strengths[:3],
         "where_marks_were_deducted": deductions[:4] if deductions else ["A few details could be strengthened."],
         "what_to_improve": improvements[:5],

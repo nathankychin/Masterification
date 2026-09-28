@@ -26,6 +26,14 @@
       {% endif %}
     </p>
 
+    {% if rubric and rubric.overall_readiness %}
+      <p class="helper-pill">Overall readiness: {{ rubric.overall_readiness }}</p>
+    {% endif %}
+
+    {% if rubric and rubric.board_fit %}
+      <p class="helper-pill">Board fit: {{ rubric.board_fit }}</p>
+    {% endif %}
+
     {% set well = rubric.what_went_well if rubric and rubric.what_went_well is defined else (rubric.strengths if rubric and rubric.strengths is defined else None) %}
     {% if well %}
       <h4>What you did well</h4>

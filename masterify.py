@@ -76,16 +76,30 @@ def healthz():
 def get_practice_mode_data(skill_name: str, category: str = None):
     name = (skill_name or "").lower()
     category_name = (category or "").lower()
-    if any(keyword in category_name for keyword in ["language", "linguistic", "literature", "english", "foreign"]) or any(keyword in name for keyword in ["english", "spanish", "french", "german", "chinese", "japanese", "korean", "language", "vocabulary", "literature"]):
+    language_keywords = ["language", "linguistic", "literature", "english", "foreign", "spanish", "french", "german", "chinese", "japanese", "korean", "vocabulary", "sentence", "grammar"]
+    music_keywords = ["music", "musical", "piano", "guitar", "violin", "drums", "voice", "chord", "melody", "song"]
+    science_keywords = ["math", "mathematics", "physics", "chemistry", "biology", "science"]
+
+    if any(keyword in category_name for keyword in language_keywords) or any(keyword in name for keyword in language_keywords):
+        phrase = generate_creative_phrase(skill_name or category or "language")
         return {
             "type": "speech",
             "title": "Answer aloud",
-            "prompt": "Explain this quote or passage in your own words: 'The only way out is through.'",
+            "prompt": f"Explain the meaning and tone of this phrase in your own words: '{phrase}'",
             "instruction": "Toggle the microphone and speak clearly as if you were answering an oral or speaking exam question.",
             "target": "Answer",
             "helper": "Focus on clarity, structure, and key evidence when you speak.",
         }
-    if any(keyword in category_name for keyword in ["math", "mathematics", "physics", "chemistry", "biology", "science"]) or any(keyword in name for keyword in ["math", "mathematics", "physics", "chemistry", "biology", "science"]):
+    if any(keyword in category_name for keyword in music_keywords) or any(keyword in name for keyword in music_keywords):
+        return {
+            "type": "music",
+            "title": "Perform the idea",
+            "prompt": "Describe a short chord or melodic idea and explain how it creates mood or emphasis in a musical phrase.",
+            "instruction": "Use the microphone or a quick written note to explain the chord, timing, and musical intention as if answering an exam-style performance question.",
+            "target": "Performance",
+            "helper": "Focus on emotional effect, structure, and the purpose of the chord or phrase.",
+        }
+    if any(keyword in category_name for keyword in science_keywords) or any(keyword in name for keyword in science_keywords):
         return {
             "type": "text",
             "title": "Solve the problem",
