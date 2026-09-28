@@ -1,5 +1,5 @@
 import pytest
-from app import evaluate_response, generate_creative_phrase
+from app import app, evaluate_response, generate_creative_phrase
 
 
 def test_evaluate_igcse_keywords_and_reasoning():
@@ -19,6 +19,15 @@ def test_igcse_weak_answer_is_penalized_without_structure():
     strong = "First, identify the steps. Then, because the equation depends on the ratio, explain the method clearly."
     assert evaluate_response("Chemistry", weak, exam_board="IGCSE") <= 30
     assert evaluate_response("Chemistry", strong, exam_board="IGCSE") >= 50
+
+
+def test_stale_session_is_redirected_cleanly_on_practice_route():
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess['user_id'] = 999999
+    response = client.get('/practice/1')
+    assert response.status_code == 302
+    assert response.headers['Location'].endswith('/login')
 
 
 def test_generate_phrase_nonempty():
