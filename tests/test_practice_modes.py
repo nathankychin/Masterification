@@ -16,6 +16,11 @@ class PracticeModeTests(unittest.TestCase):
         self.assertIn("chord", data["prompt"].lower())
         self.assertIn("microphone", data["instruction"].lower())
 
+    def test_language_questions_are_distinct_and_exam_style(self):
+        fallback = get_practice_mode_data("Spanish", "Languages")
+        self.assertIn("phrase", fallback["prompt"].lower())
+        self.assertIn("meaning", fallback["prompt"].lower())
+
 
 if __name__ == "__main__":
     unittest.main()
